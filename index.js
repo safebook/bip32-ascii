@@ -101,30 +101,29 @@ BIP32.prototype.toWIF = function () {
   return wif.encode(this.network.wif, this.privateKey, true)
 }
 
-let HIGHEST_BIT = 0x80000000
+BIP32.prototype.deriveFromBuffer = function (index, isHardened = true) {
+  typeforce(typeforce.Buffer, index) // where typeforce.Buffer comes from ?
+  typeforce('Boolean', isHardened)
 
-// https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#child-key-derivation-ckd-functions
-BIP32.prototype.derive = function (index) {
-  typeforce(typeforce.UInt32, index)
+  if (index.length < 4) throw new TypeError('Buffer too short')
 
-  let isHardened = index >= HIGHEST_BIT
-  let data = Buffer.allocUnsafe(37)
+  let data = Buffer.allocUnsafe(33 + index.length)
 
   // Hardened child
   if (isHardened) {
     if (this.isNeutered()) throw new TypeError('Missing private key for hardened child key')
 
-    // data = 0x00 || ser256(kpar) || ser32(index)
+    // data = 0x00 || ser256(kpar) || index
     data[0] = 0x00
     this.privateKey.copy(data, 1)
-    data.writeUInt32BE(index, 33)
+    index.copy(data, 33)
 
   // Normal child
   } else {
-    // data = serP(point(kpar)) || ser32(index)
-    //      = serP(Kpar) || ser32(index)
+    // data = serP(point(kpar)) || index
+    //      = serP(Kpar) || index
     this.publicKey.copy(data, 0)
-    data.writeUInt32BE(index, 33)
+    index.copy(data, 33)
   }
 
   let I = crypto.hmacSHA512(this.chainCode, data)
@@ -132,7 +131,7 @@ BIP32.prototype.derive = function (index) {
   let IR = I.slice(32)
 
   // if parse256(IL) >= n, proceed with the next value for i
-  if (!ecc.isPrivate(IL)) return this.derive(index + 1)
+  if (!ecc.isPrivate(IL)) return null;
 
   // Private parent key -> private child key
   let hd
@@ -141,7 +140,7 @@ BIP32.prototype.derive = function (index) {
     let ki = ecc.privateAdd(this.privateKey, IL)
 
     // In case ki == 0, proceed with the next value for i
-    if (ki == null) return this.derive(index + 1)
+    if (ki == null) return null;
 
     hd = fromPrivateKey(ki, IR, this.network)
 
@@ -152,15 +151,29 @@ BIP32.prototype.derive = function (index) {
     let Ki = ecc.pointAddScalar(this.publicKey, IL, true)
 
     // In case Ki is the point at infinity, proceed with the next value for i
-    if (Ki === null) return this.derive(index + 1)
+    if (Ki === null) return null;
 
     hd = fromPublicKey(Ki, IR, this.network)
   }
 
   hd.depth = this.depth + 1
-  hd.index = index
+  hd.index = index.readUInt32BE(index)
   hd.parentFingerprint = this.fingerprint.readUInt32BE(0)
   return hd
+}
+
+let HIGHEST_BIT = 0x80000000
+
+// https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#child-key-derivation-ckd-functions
+BIP32.prototype.derive = function (index) {
+  typeforce(typeforce.UInt32, index)
+
+  let isHardened = index >= HIGHEST_BIT
+
+  let indexBuffer = Buffer.allocUnsafe(4)
+  indexBuffer.writeUInt32BE(index, 0)
+
+  return this.deriveFromBuffer(indexBuffer, isHardened)
 }
 
 let UINT31_MAX = Math.pow(2, 31) - 1
