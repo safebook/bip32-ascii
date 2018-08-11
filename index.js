@@ -101,7 +101,7 @@ BIP32.prototype.toWIF = function () {
   return wif.encode(this.network.wif, this.privateKey, true)
 }
 
-BIP32.prototype.deriveFromBuffer = function (index, isHardened = true) {
+BIP32.prototype.derive2 = function (index, isHardened = true) {
   typeforce(typeforce.Buffer, index) // where typeforce.Buffer comes from ?
   typeforce('Boolean', isHardened)
 
@@ -131,7 +131,7 @@ BIP32.prototype.deriveFromBuffer = function (index, isHardened = true) {
   let IR = I.slice(32)
 
   // if parse256(IL) >= n, proceed with the next value for i
-  if (!ecc.isPrivate(IL)) return null;
+  if (!ecc.isPrivate(IL)) return null
 
   // Private parent key -> private child key
   let hd
@@ -140,7 +140,7 @@ BIP32.prototype.deriveFromBuffer = function (index, isHardened = true) {
     let ki = ecc.privateAdd(this.privateKey, IL)
 
     // In case ki == 0, proceed with the next value for i
-    if (ki == null) return null;
+    if (ki == null) return null
 
     hd = fromPrivateKey(ki, IR, this.network)
 
@@ -151,7 +151,7 @@ BIP32.prototype.deriveFromBuffer = function (index, isHardened = true) {
     let Ki = ecc.pointAddScalar(this.publicKey, IL, true)
 
     // In case Ki is the point at infinity, proceed with the next value for i
-    if (Ki === null) return null;
+    if (Ki === null) return null
 
     hd = fromPublicKey(Ki, IR, this.network)
   }
@@ -173,7 +173,7 @@ BIP32.prototype.derive = function (index) {
   let indexBuffer = Buffer.allocUnsafe(4)
   indexBuffer.writeUInt32BE(index, 0)
 
-  return this.deriveFromBuffer(indexBuffer, isHardened)
+  return this.derive2(indexBuffer, isHardened)
 }
 
 let UINT31_MAX = Math.pow(2, 31) - 1
@@ -190,6 +190,10 @@ BIP32.prototype.deriveHardened = function (index) {
 
 function BIP32Path (value) {
   return typeforce.String(value) && value.match(/^(m\/)?(\d+'?\/)*\d+'?$/)
+}
+
+function BIP32AlphaNumericPath (value) {
+  return typeforce.String(value) && value.match(/^(m\/)?(\w+'?\/)*\w+'?$/)
 }
 
 BIP32.prototype.derivePath = function (path) {
@@ -210,6 +214,28 @@ BIP32.prototype.derivePath = function (path) {
     } else {
       index = parseInt(indexStr, 10)
       return prevHd.derive(index)
+    }
+  }, this)
+}
+
+BIP32.prototype.derivePath2 = function (path) {
+  typeforce(BIP32AlphaNumericPath, path)
+
+  let splitPath = path.split('/')
+  if (splitPath[0] === 'm') {
+    if (this.parentFingerprint) throw new TypeError('Expected master, got child')
+
+    splitPath = splitPath.slice(1)
+  }
+
+  return splitPath.reduce(function (prevHd, indexStr) {
+    let isHardened = (indexStr.slice(-1) === "'")
+    if (isHardened) indexStr = indexStr.slice(0, -1)
+
+    if (/^\d+$/.test(indexStr)) {
+      return prevHd.derive(parseInt(indexStr, 10), isHardened)
+    } else {
+      return prevHd.derive2(Buffer.from(indexStr), isHardened)
     }
   }, this)
 }
