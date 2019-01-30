@@ -1,5 +1,5 @@
 {
-  "name": "bip32",
+  "name": "bip32-ascii",
   "version": "1.0.2",
   "description": "A BIP32 compatible library",
   "keywords": [
